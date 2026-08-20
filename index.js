@@ -1,5 +1,7 @@
+```javascript
 require('dotenv').config();
 
+const http = require('http');
 const { chromium } = require('playwright');
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
@@ -7,11 +9,29 @@ const fs = require('fs');
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const EMBASSY_URL = 'https://appointment.afghanembassy.berlin/';
 const CHAT_FILE = './chat_id.txt';
+const PORT = process.env.PORT || 10000;
 
 if (!TOKEN) {
-    console.error('❌ TELEGRAM_BOT_TOKEN در فایل .env پیدا نشد.');
+    console.error('❌ TELEGRAM_BOT_TOKEN پیدا نشد.');
     process.exit(1);
 }
+
+// --------------------------------------------------
+// Render Health Server
+// --------------------------------------------------
+
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Embassy Checker is running.');
+});
+
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🌐 Health server running on port ${PORT}`);
+});
+
+// --------------------------------------------------
+// Telegram
+// --------------------------------------------------
 
 const bot = new TelegramBot(TOKEN, {
     polling: true
@@ -20,22 +40,17 @@ const bot = new TelegramBot(TOKEN, {
 let chatId = null;
 let checking = false;
 
-// -----------------------------
-// ذخیره Chat ID
-// -----------------------------
-
 if (fs.existsSync(CHAT_FILE)) {
     chatId = fs.readFileSync(CHAT_FILE, 'utf8').trim();
 }
 
-// -----------------------------
-// Telegram message
-// -----------------------------
+// --------------------------------------------------
+// Telegram Message
+// --------------------------------------------------
 
 async function sendTelegram(message) {
-
     if (!chatId) {
-        console.log('⚠️ هنوز Chat ID نداریم. در تلگرام /start بفرست.');
+        console.log('⚠️ Chat ID نداریم. در Telegram /start بفرست.');
         return;
     }
 
@@ -46,12 +61,11 @@ async function sendTelegram(message) {
     }
 }
 
-// -----------------------------
-// تشخیص "بدون وقت"
-// -----------------------------
+// --------------------------------------------------
+// No Appointment Detection
+// --------------------------------------------------
 
 function noAppointment(text) {
-
     const t = text
         .toLowerCase()
         .replace(/\s+/g, ' ');
@@ -70,12 +84,11 @@ function noAppointment(text) {
     return phrases.some(phrase => t.includes(phrase));
 }
 
-// -----------------------------
-// تشخیص ساعت
-// -----------------------------
+// --------------------------------------------------
+// Find Times
+// --------------------------------------------------
 
 function findTimes(text) {
-
     const matches = text.match(
         /\b(?:[01]?\d|2[0-3]):[0-5]\d\b/g
     );
@@ -83,28 +96,26 @@ function findTimes(text) {
     return matches ? [...new Set(matches)] : [];
 }
 
-// -----------------------------
-// انتخاب اولین گزینه واقعی
-// -----------------------------
+// --------------------------------------------------
+// Select First Real Option
+// --------------------------------------------------
 
 async function selectFirstRealOption(select) {
-
-    const options = await select.locator('option').evaluateAll(
-        opts =>
-            opts.map(o => ({
-                text: (o.textContent || '').trim(),
-                value: o.value,
-                disabled: o.disabled
-            }))
+    const options = await select.locator('option').evaluateAll(opts =>
+        opts.map(o => ({
+            text: (o.textContent || '').trim(),
+            value: o.value,
+            disabled: o.disabled
+        }))
     );
 
     const usable = options.find(o => {
-
         if (o.disabled) return false;
         if (!o.value) return false;
 
-        return !/select|choose|auswählen|bitte|provider|service/i
-            .test(o.text);
+        return !/select|choose|auswählen|bitte|provider|service/i.test(
+            o.text
+        );
     });
 
     if (!usable) {
@@ -112,31 +123,22 @@ async function selectFirstRealOption(select) {
     }
 
     try {
-
         await select.selectOption(usable.value);
 
-        console.log(
-            `✅ گزینه انتخاب شد: ${usable.text}`
-        );
+        console.log(`✅ گزینه انتخاب شد: ${usable.text}`);
 
         return true;
-
     } catch (error) {
-
-        console.log(
-            `⚠️ انتخاب گزینه ممکن نبود: ${error.message}`
-        );
-
+        console.log(`⚠️ انتخاب گزینه ممکن نبود: ${error.message}`);
         return false;
     }
 }
 
-// -----------------------------
-// بررسی سایت
-// -----------------------------
+// --------------------------------------------------
+// Check Embassy
+// --------------------------------------------------
 
 async function checkAppointments(notify = true) {
-
     if (checking) {
         console.log('⏳ بررسی قبلی هنوز تمام نشده.');
         return;
@@ -147,9 +149,11 @@ async function checkAppointments(notify = true) {
     let browser = null;
 
     try {
-
         console.log('\n--------------------------------');
-        console.log('🔎 شروع بررسی:', new Date().toLocaleString('de-DE'));
+        console.log(
+            '🔎 شروع بررسی:',
+            new Date().toLocaleString('de-DE')
+        );
         console.log('--------------------------------');
 
         browser = await chromium.launch({
@@ -172,14 +176,11 @@ async function checkAppointments(notify = true) {
 
         console.log('🌐 سایت باز شد.');
 
-        // -------------------------
-        // مرحله Service & Provider
-        // -------------------------
+        // --------------------------------------------------
+        // Service & Provider
+        // --------------------------------------------------
 
-        const selects = page.locator(
-            'select:visible'
-        );
-
+        const selects = page.locator('select:visible');
         const selectCount = await selects.count();
 
         console.log(
@@ -188,7 +189,6 @@ async function checkAppointments(notify = true) {
         );
 
         for (let i = 0; i < selectCount; i++) {
-
             const select = selects.nth(i);
 
             await selectFirstRealOption(select);
@@ -196,18 +196,16 @@ async function checkAppointments(notify = true) {
             await page.waitForTimeout(1500);
         }
 
-        // -------------------------
-        // بررسی متن فعلی
-        // -------------------------
+        // --------------------------------------------------
+        // Current Page Text
+        // --------------------------------------------------
 
         let text = await page.locator('body').innerText();
 
         if (noAppointment(text)) {
-
             console.log('🔴 هیچ وقت آزادی وجود ندارد.');
 
             if (notify) {
-
                 await sendTelegram(
                     '🔴 بررسی سفارت انجام شد.\n\n' +
                     '❌ در حال حاضر وقت آزاد وجود ندارد.\n\n' +
@@ -218,16 +216,13 @@ async function checkAppointments(notify = true) {
             return;
         }
 
-        // -------------------------
-        // دکمه Next
-        // -------------------------
+        // --------------------------------------------------
+        // Next
+        // --------------------------------------------------
 
-        const nextButtons = page.getByRole(
-            'button',
-            {
-                name: /^Next$/i
-            }
-        );
+        const nextButtons = page.getByRole('button', {
+            name: /^Next$/i
+        });
 
         const nextCount = await nextButtons.count();
 
@@ -237,7 +232,6 @@ async function checkAppointments(notify = true) {
         );
 
         if (nextCount > 0) {
-
             await nextButtons.first().click();
 
             console.log(
@@ -247,32 +241,26 @@ async function checkAppointments(notify = true) {
             await page.waitForTimeout(5000);
         }
 
-        // -------------------------
-        // متن صفحه Appointment
-        // -------------------------
+        // --------------------------------------------------
+        // Appointment Page
+        // --------------------------------------------------
 
         text = await page.locator('body').innerText();
 
-        console.log(
-            '📅 صفحه Appointment بررسی شد.'
-        );
+        console.log('📅 صفحه Appointment بررسی شد.');
 
-        console.log(
-            text.substring(0, 1500)
-        );
+        console.log(text.substring(0, 1500));
 
-        // -------------------------
-        // حالت بدون وقت
-        // -------------------------
+        // --------------------------------------------------
+        // No Appointment
+        // --------------------------------------------------
 
         if (noAppointment(text)) {
-
             console.log(
                 '🔴 نتیجه: وقت آزاد وجود ندارد.'
             );
 
             if (notify) {
-
                 await sendTelegram(
                     '🔴 بررسی انجام شد.\n\n' +
                     '❌ هیچ وقت آزادی پیدا نشد.\n\n' +
@@ -283,14 +271,13 @@ async function checkAppointments(notify = true) {
             return;
         }
 
-        // -------------------------
-        // پیدا کردن ساعت
-        // -------------------------
+        // --------------------------------------------------
+        // Find Times
+        // --------------------------------------------------
 
         const times = findTimes(text);
 
         if (times.length > 0) {
-
             console.log(
                 '🟢 ساعت پیدا شد:',
                 times
@@ -308,16 +295,15 @@ async function checkAppointments(notify = true) {
             return;
         }
 
-        // -------------------------
-        // بررسی عناصر قابل انتخاب
-        // -------------------------
+        // --------------------------------------------------
+        // Clickable Elements
+        // --------------------------------------------------
 
         const clickable = await page.locator(
             'button:visible:not([disabled]), ' +
             'input:visible:not([disabled]), ' +
             '[role="button"]:visible'
         ).evaluateAll(elements => {
-
             return elements
                 .map(e => ({
                     text: (
@@ -335,9 +321,9 @@ async function checkAppointments(notify = true) {
             clickable.slice(0, 30)
         );
 
-        // -------------------------
-        // تشخیص تاریخ
-        // -------------------------
+        // --------------------------------------------------
+        // Date Detection
+        // --------------------------------------------------
 
         const datePattern =
             /\b(?:0?[1-9]|[12]\d|3[01])[./-](?:0?[1-9]|1[0-2])(?:[./-]\d{2,4})?\b/;
@@ -347,7 +333,6 @@ async function checkAppointments(notify = true) {
         );
 
         if (possibleDates.length > 0) {
-
             console.log(
                 '🟢 تاریخ قابل انتخاب پیدا شد:',
                 possibleDates
@@ -363,16 +348,15 @@ async function checkAppointments(notify = true) {
             return;
         }
 
-        // -------------------------
-        // نتیجه نامشخص
-        // -------------------------
+        // --------------------------------------------------
+        // Unknown
+        // --------------------------------------------------
 
         console.log(
             '🟡 وقت آزاد قطعی تشخیص داده نشد.'
         );
 
         if (notify) {
-
             await sendTelegram(
                 '🟡 بررسی انجام شد.\n\n' +
                 'ربات پیام «بدون وقت» را پیدا نکرد، ' +
@@ -389,7 +373,6 @@ async function checkAppointments(notify = true) {
         );
 
         if (notify) {
-
             await sendTelegram(
                 '⚠️ هنگام بررسی سایت خطا رخ داد.\n\n' +
                 'ربات پنج دقیقه دیگر دوباره تلاش می‌کند.'
@@ -399,7 +382,6 @@ async function checkAppointments(notify = true) {
     } finally {
 
         if (browser) {
-
             try {
                 await browser.close();
             } catch {}
@@ -433,7 +415,6 @@ bot.onText(/^\/start$/, async msg => {
         '🤖 ربات آماده است.\n\n' +
         '✅ بررسی خودکار فعال است.\n' +
         '⏰ هر ۵ دقیقه سایت سفارت را بررسی می‌کنم.\n\n' +
-        'لازم نیست هر بار /check بفرستی.\n\n' +
         'اگر خواستی همین الان دستی بررسی کنم:\n' +
         '/check'
     );
@@ -462,7 +443,7 @@ bot.onText(/^\/check$/, async msg => {
 });
 
 // ==================================================
-// شروع بررسی خودکار
+// Automatic Checking
 // ==================================================
 
 console.log(
@@ -487,4 +468,15 @@ setTimeout(async () => {
 
     }, 5 * 60 * 1000);
 
-}, 5000);
+}, 5000);const PORT = process.env.PORT || 10000;
+
+require('http')
+  .createServer((req, res) => {
+    res.writeHead(200);
+    res.end('Embassy checker is running');
+  })
+  .listen(PORT, '0.0.0.0', () => {
+    console.log(`🌐 Server listening on port ${PORT}`);
+  });
+```
+
