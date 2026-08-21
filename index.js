@@ -383,6 +383,7 @@ async function checkAppointments(notify = true) {
           'پنج دقیقه دیگر دوباره بررسی می‌کنم.'
       );
     }
+
   } catch (error) {
     console.log(
       'خطا: ' + error.message
@@ -394,7 +395,9 @@ async function checkAppointments(notify = true) {
           'پنج دقیقه دیگر دوباره تلاش می‌کنم.'
       );
     }
+
   } finally {
+
     if (browser) {
       try {
         await browser.close();
@@ -402,6 +405,8 @@ async function checkAppointments(notify = true) {
     }
 
     checking = false;
+
+    console.log('بررسی فعلی کاملاً تمام شد.');
   }
 }
 
@@ -454,25 +459,44 @@ bot.onText(/^\/check$/, async msg => {
 });
 
 // ------------------------------------
-// بررسی خودکار
+// بررسی خودکار دائمی
 // ------------------------------------
 
-console.log(
-  'بررسی خودکار هر پنج دقیقه فعال است.'
-);
+async function automaticChecker() {
+  console.log('');
+  console.log('================================');
+  console.log('بررسی خودکار هر پنج دقیقه فعال است.');
+  console.log('================================');
 
-setTimeout(async () => {
-  console.log(
-    'اولین بررسی خودکار شروع شد.'
+  // اولین بررسی بعد از 5 ثانیه
+  await new Promise(resolve =>
+    setTimeout(resolve, 5000)
   );
 
-  await checkAppointments(true);
+  while (true) {
+    console.log('');
+    console.log('اولین/بررسی جدید خودکار شروع شد.');
 
-  setInterval(async () => {
+    try {
+      await checkAppointments(true);
+    } catch (error) {
+      console.log(
+        'خطا در بررسی خودکار: ' + error.message
+      );
+    }
+
     console.log(
-      'پنج دقیقه گذشت؛ بررسی جدید شروع می‌شود.'
+      'بررسی تمام شد.'
     );
 
-    await checkAppointments(true);
-  }, 5 * 60 * 1000);
-}, 5000);
+    console.log(
+      'پنج دقیقه تا بررسی بعدی...'
+    );
+
+    await new Promise(resolve =>
+      setTimeout(resolve, 5 * 60 * 1000)
+    );
+  }
+}
+
+automaticChecker();
